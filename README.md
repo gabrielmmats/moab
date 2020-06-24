@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # MOAB: Mesh-Oriented datABase
 
 MOAB is a component for representing and evaluating mesh data. MOAB can store structured and unstructured mesh, consisting of elements in the finite element "zoo". The functional interface to MOAB is simple yet powerful, allowing the representation of many types of metadata commonly found on the mesh. MOAB is optimized for efficiency in space and time, based on access to mesh in chunks rather than through individual entities, while also versatile enough to support individual entity access. MOAB can be used in several ways: 
@@ -275,3 +276,7 @@ If reading only part of a file, specify whether or not child or contained sets (
 `HYPERSLAB_APPEND`: During partial or parallel read using a modified (i.e. hacked) HDF5 library, utilize hack for more efficient hyperslab selection construction. This option is deprecated.  Reader should automatically detect if `HYPERSLAB_APPEND` works and if not will default to `HYPERSLAB_OR`.
 
 `HYPERSLAB_SELECT_LIMIT=n`: Set upper bound on the number of HDF5 hyperslabs that can be combined for a single read from an dataset.  The default is defined by `DEFAULT_HYPERSLAB_SELECT_LIMIT` in `ReadHDF5Dataset.cpp`.  If `HYPERSLAB_APPEND` is specified and this option is not, then the default is no limit.  This limit should be removed for future HDF5 releases (> 1.8.x) as said future releases will no longer require the `HYPERSLAB_APPEND` hack in order to avoid O(n^2) hyperslab selection behavior.
+=======
+# moab
+IMPRESS version of MOAB
+>>>>>>> b4a80acb90f9c4bb74064ea1718929d7b4a9e7ee
