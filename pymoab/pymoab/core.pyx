@@ -1,9 +1,12 @@
 """Implements core functionality."""
-# cython: boundscheck=False
+import sys
+
 from cython.operator cimport dereference as deref
+
 cimport numpy as np
 import numpy as np
 import ctypes
+
 from pymoab cimport moab
 from pymoab cimport eh
 
@@ -15,9 +18,13 @@ from libcpp.vector cimport vector
 from libcpp.string cimport string as std_string
 from libc.stdlib cimport malloc
 
-from collections import Iterable
+if sys.version_info < (3, 0):
+    from collections import Iterable
+else:
+    from collections.abc import Iterable
 
 cdef void* null = NULL
+
 cdef class Core(object):
 
     def __cinit__(self):
@@ -1093,73 +1100,6 @@ cdef class Core(object):
         check_error(err, exceptions)
         return adj
 
-    def get_ord_adjacencies(self, from_ent, int to_dim, Tag tag_handle = None, bint create_if_missing = False, int op_type = types.INTERSECT, exceptions = ()):
-
-        cdef moab.ErrorCode err
-        cdef moab.EntityHandle ms_handle
-        cdef Range r
-        cdef Range adjs = Range()
-        cdef Range inR = Range()
-        cdef int i
-        cdef int j
-        cdef int sizj
-        cdef int siz
-        cdef int idx_count = 0
-        cdef bint jagged = 0
-        cdef int default_size = 0
-        cdef int npinput = 0
-        cdef bint tag_opt = False
-        cdef np.ndarray[dtype = np.uint64_t, ndim = 1] inputArray
-        cdef vector[eh.EntityHandle] rangeList
-        cdef np.ndarray[np.int64_t] tag_array
-        cdef np.ndarray[np.uint64_t] handle_array
-        if isinstance(from_ent, Range):
-            r = from_ent
-        elif isinstance(from_ent, np.ndarray):
-            inputArray = from_ent
-            npinput=1
-            siz = inputArray.size
-        else:
-            r = Range(from_ent)
-        if not npinput:
-          siz = r.size()
-        cdef np.ndarray[np.int32_t, ndim = 1] idx_array = np.empty(siz, dtype = np.int32)
-        if tag_handle is not None:
-          tag_opt = True
-        for i in range(siz):
-          if npinput:
-            inR.insert(inputArray[i])
-          else:
-            inR.insert(r[i])
-          err = self.inst.get_adjacencies(deref(inR.inst), to_dim, create_if_missing, deref(adjs.inst), op_type)
-          inR.pop_front()
-          check_error(err, exceptions)
-          sizj = adjs.size()
-          if tag_opt:
-            tag_array = self.tag_get_data(tag_handle, adjs, flat=True).astype(np.int64)
-            for j in range(sizj):
-              rangeList.push_back(tag_array[j])
-          else:
-            handle_array = adjs.get_array()
-            for j in range(sizj):
-              rangeList.push_back(handle_array[j])
-          if not jagged:
-            if default_size==0:
-              default_size = sizj
-            elif default_size != sizj:
-              jagged = 1
-          idx_count = idx_count + sizj
-          idx_array[i] = idx_count
-          adjs.clear()
-        if siz==1:
-          if jagged:
-            return np.delete(np.array(np.split(np.array(rangeList), idx_array)), -1)[0]
-          return np.array(rangeList).reshape((-1, default_size))[0]
-        if jagged:
-          return np.delete(np.array(np.split(np.array(rangeList), idx_array)), -1)
-        return np.array(rangeList).reshape((-1, default_size))
-
-
     def type_from_handle(self, entity_handle):
         """
         Returns the type (MBVERTEX, MBQUAD, etc.) of an EntityHandle
@@ -1445,38 +1385,26 @@ cdef class Core(object):
 
         return np.asarray(ehs_out, dtype = np.uint64)
 
-    def get_ord_connectivity(self, entity_handles, Tag tag_handle = None, bint tag_opt = True, exceptions = ()):
+    def set_connectivity(self, entity_handle, connect, exceptions=()):
         """
-        Returns the vertex handles which make up the mesh entities passed in via
-        the entity_handles argument.
+        Sets the connectivity for an EntityHandle.
 
         Example
         -------
         # new PyMOAB instance
         mb = core.Core()
-        #create some vertices
+        #create 3 vertices and get the list of entity handles
         coords = np.array((0,0,0,1,0,0,1,1,1),dtype='float64')
         verts = mb.create_vertices(coords)
-        #create a triangle
-        verts = np.array(((verts[0],verts[1],verts[2]),),dtype='uint64')
-        tris = mb.create_elements(types.MBTRI,verts)
-        # retrieve the vertex handles that make up the triangle
-        conn = mb.get_connectivity(tris[0])
-
+        # set the connectivity of an existing triangle with new verts
+        mb.set_connectivity(tri_eh, verts)
 
         Parameters
         ----------
-        entity_handles : iterable of MOAB EntityHandles or a single EntityHandle
-            to retrieve the vertex connectivity of. Note that these
-            EntityHandles should represent mesh entities (MBEDGE,
-            MBTRI, MBQUAD, etc.) rather than an EntitySet.
-        exceptions : tuple (default is empty tuple)
-            A tuple containing any error types that should
-            be ignored. (see pymoab.types module for more info)
-
-        Returns
-        -------
-        Numpy array of vertex EntityHandles
+        entity_handle : EntityHandle to set connectivity of. Must be an
+            element.
+        connect : Vector of EntityHandles for new connectivity of
+            entity_handle.
 
         Raises
         ------
@@ -1485,56 +1413,11 @@ cdef class Core(object):
         ValueError
             if an EntityHandle is not of the correct datatype
         """
+        cdef int num_connect = len(connect)
         cdef moab.ErrorCode err
-        cdef np.ndarray[eh.EntityHandle] ehs
-        cdef np.ndarray[np.int32_t] tag_array
-        if isinstance(entity_handles, _eh_py_type):
-            ehs = _eh_array([entity_handles,])
-        elif isinstance(entity_handles, np.ndarray):
-            ehs = entity_handles
-        else:
-            ehs = _eh_array(entity_handles)
-        cdef vector[eh.EntityHandle] ehs_out
-        cdef eh.EntityHandle* eh_ptr
-        cdef int num_ents = 0
-        cdef int idx_count = 0
-        cdef int typej
-        cdef bint jagged = 0
-        cdef int default_size = 0
-        cdef int siz = ehs.size
-        cdef np.ndarray[dtype = np.int32_t, ndim = 1] idx_array = np.empty(siz, dtype = np.int32)
-        cdef np.ndarray[dtype = np.uint8_t] sizenum = np.array([1,2,3,4,0,4,5,0,0,8,0], dtype = np.uint8)
-        err = self.inst.get_connectivity(<eh.EntityHandle*> ehs.data, ehs.size, ehs_out)
+        cdef np.ndarray[eh.EntityHandle] arr = _eh_array(connect)
+        err = self.inst.set_connectivity(<unsigned long> entity_handle, <eh.EntityHandle*> arr.data, num_connect)
         check_error(err, exceptions)
-        cdef int i
-        for i in range(siz):
-          typej = self.inst.type_from_handle(<unsigned long> ehs[i])
-          if not jagged:
-            if default_size==0:
-              default_size = sizenum[typej]
-            elif default_size != sizenum[typej]:
-              jagged = 1
-          idx_count = idx_count + sizenum[typej]
-          idx_array[i] = idx_count
-        if siz>1:
-          if not tag_opt:
-            if jagged:
-              return np.delete(np.array(np.split(np.array(ehs_out, dtype = np.uint64), idx_array)), -1)
-            return np.array(ehs_out, dtype = np.uint64).reshape((-1, default_size))
-          else:
-            tag_array = self.tag_get_data(tag_handle, np.array(ehs_out, dtype = np.uint64), flat=True)
-            if jagged:
-              return np.delete(np.array(np.split(tag_array.astype(np.int64), idx_array)), -1)
-            return tag_array.astype(np.int64).reshape((-1, default_size))
-        if not tag_opt:
-          if jagged:
-            return np.delete(np.array(np.split(np.array(ehs_out, dtype = np.uint64), idx_array)), -1)[0]
-          return np.array(ehs_out, dtype = np.uint64).reshape((-1, default_size))[0]
-        else:
-          tag_array = self.tag_get_data(tag_handle, np.array(ehs_out, dtype = np.uint64), flat=True)
-          if jagged:
-            return np.delete(np.array(np.split(tag_array.astype(np.int64), idx_array)), -1)[0]
-          return tag_array.astype(np.int64).reshape((-1, default_size))[0]
 
     def get_coords(self, entities, exceptions = ()):
         """
@@ -1577,15 +1460,11 @@ cdef class Core(object):
             coords = np.empty((3*r.size(),),dtype='float64')
             err = self.inst.get_coords(deref(r.inst), <double*> coords.data)
         else:
-            if isinstance(entities, np.ndarray):
-              arr = entities
-            else:
-              arr = _eh_array(entities)
+            arr = _eh_array(entities)
             coords = np.empty((3*len(arr),),dtype='float64')
             err = self.inst.get_coords(<eh.EntityHandle*> arr.data, len(entities), <double*> coords.data)
         check_error(err, exceptions)
         return coords
-
 
     def set_coords(self, entities, np.ndarray coords, exceptions = ()):
         """
@@ -1991,93 +1870,3 @@ cdef class Core(object):
             t.inst = tag
             tag_list.append(t)
         return tag_list
-
-
-    def get_interface_faces(self, con, par, inter, bound, bound_par, num_c, fac_vec):
-
-        cdef np.ndarray[np.int16_t, ndim = 2] faces_neigh = fac_vec
-        cdef np.ndarray[np.uint16_t, ndim = 3] connectivities = con
-        cdef np.ndarray[np.int32_t, ndim = 2] parts = par
-        cdef np.ndarray[np.uint64_t, ndim = 1] interface_faces = inter
-        cdef np.ndarray[np.int32_t, ndim = 1] boundary_parts = bound_par
-        cdef np.ndarray[np.uint64_t, ndim = 1] boundary_faces = bound
-        cdef int i
-        cdef num_internal
-        cdef int iface_number = 1
-        cdef int num_coarse = num_c
-        for i in range(parts.shape[0]):
-          if not connectivities[parts[i][0]][parts[i][1]][2]:
-            connectivities[parts[i][0]][parts[i][1]][2] = iface_number
-            connectivities[parts[i][1]][parts[i][0]][2] = iface_number
-            faces_neigh[parts[i][0]][parts[i][1]] = iface_number- 1
-            faces_neigh[parts[i][1]][parts[i][0]]= iface_number- 1
-            iface_number += 1
-        num_internal = iface_number - 1
-        for i in range(boundary_parts.size):
-            if not connectivities[boundary_parts[i]][num_coarse][2]:
-              connectivities[boundary_parts[i]][num_coarse][2] = iface_number
-              faces_neigh[boundary_parts[i]][num_coarse] = iface_number- 1
-              iface_number += 1
-        listRanges = [Range() for i in range(iface_number)]
-        for i in range(parts.shape[0]):
-          listRanges[connectivities[parts[i][0]][parts[i][1]][2]].insert(interface_faces[i])
-        for i in range(boundary_parts.size):
-          listRanges[connectivities[boundary_parts[i]][num_coarse][2]].insert(boundary_faces[i])
-
-        return listRanges[1:], num_internal
-
-    def get_interface_entities(self, dim, con, inter, coarses, indx, bound, bound_parts, num_c, entity_vec):
-
-        cdef int entity_dim = dim
-        cdef np.ndarray[np.int16_t, ndim = 2] entity_neigh = entity_vec
-        cdef np.ndarray[np.uint16_t, ndim = 3] connectivities = con
-        cdef np.ndarray[np.int32_t, ndim = 2] parts = np.array([], dtype=np.int32).reshape(-1, 2)
-        cdef np.ndarray[np.uint64_t, ndim = 1] interface_ent_1 = np.array([], dtype=np.uint64)
-        cdef np.ndarray[np.uint64_t, ndim = 1] interface_ent_2 = np.array([], dtype=np.uint64)
-        cdef np.ndarray[np.int32_t, ndim = 1] parts_vec
-        coarse_jagged = np.array([])
-        if indx.size>0:
-          parts = np.concatenate(coarses[~indx]).reshape(-1,2)
-          interface_ent_1 = inter[~indx]
-          interface_ent_2 = inter[indx]
-          coarse_jagged  = coarses[indx]
-        cdef np.ndarray[np.uint64_t, ndim = 1] boundary_entities = bound
-        cdef int i,j,k
-        cdef num_internal
-        cdef int ient_number = 1
-        cdef int num_coarse = num_c
-        for i in range(parts.shape[0]):
-          if not connectivities[parts[i][0]][parts[i][1]][entity_dim]:
-            connectivities[parts[i][0]][parts[i][1]][entity_dim] = ient_number
-            connectivities[parts[i][1]][parts[i][0]][entity_dim] = ient_number
-            entity_neigh[parts[i][0]][parts[i][1]] = ient_number- 1
-            entity_neigh[parts[i][1]][parts[i][0]]= ient_number- 1
-            ient_number += 1
-
-        listRanges = [Range() for i in range(ient_number)]
-        for i in range(parts.shape[0]):
-          listRanges[connectivities[parts[i][0]][parts[i][1]][entity_dim]].insert(interface_ent_1[i])
-        for i in range(coarse_jagged.shape[0]):
-          parts_vec =  coarse_jagged[i]
-          for j in range(parts_vec.size):
-            for k in range(parts_vec.size):
-              if j != k:
-                if not connectivities[parts_vec[j]][parts_vec[k]][entity_dim]:
-                    connectivities[parts_vec[k]][parts_vec[j]][entity_dim] = ient_number
-                    connectivities[parts_vec[j]][parts_vec[k]][entity_dim] = ient_number
-                    entity_neigh[parts_vec[k]][parts_vec[j]] = ient_number- 1
-                    entity_neigh[parts_vec[j]][parts_vec[k]] = ient_number- 1
-                    ient_number += 1
-                    listRanges.append(Range())
-                listRanges[connectivities[parts_vec[j]][parts_vec[k]][entity_dim]].insert(interface_ent_2[i])
-        num_internal = ient_number - 1
-        for i in range(bound_parts.shape[0]):
-          parts_vec = bound_parts[i]
-          for j in range(parts_vec.size):
-            if not connectivities[parts_vec[j]][num_coarse][entity_dim]:
-              connectivities[parts_vec[j]][num_coarse][entity_dim] = ient_number
-              entity_neigh[parts_vec[j]][num_coarse] = ient_number- 1
-              ient_number += 1
-              listRanges.append(Range())
-            listRanges[connectivities[parts_vec[j]][num_coarse][entity_dim]].insert(boundary_entities[i])
-        return listRanges[1:], num_internal

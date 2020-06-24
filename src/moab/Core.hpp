@@ -237,6 +237,14 @@ public:
                                         bool corners_only = false,
                                         std::vector<int> *offsets = NULL) const;
 
+    virtual ErrorCode  get_connectivity_with_size(const EntityHandle *entity_handles,
+                                        const int num_handles,
+                                        std::vector<EntityHandle> &connectivity,
+                                        int *size_vector,
+                                        int *jagged,
+                                        bool corners_only = false,
+                                        std::vector<int> *offsets = NULL) const;
+
     //! Gets the connectivity for a vector of elements
     /** Same as vector-based version except range is returned (unordered!)
      */

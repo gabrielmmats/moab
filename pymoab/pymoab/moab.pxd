@@ -6,7 +6,6 @@ from libcpp.string cimport string as std_string
 from eh cimport EntityHandle, EntityID
 cimport numpy as np
 
-
 cdef extern from 'moab/Types.hpp' namespace "moab":
 
     ctypedef enum EntitySetProperty:
@@ -101,9 +100,6 @@ cdef extern from "moab/Range.hpp" namespace "moab":
         size_t psize()
         bint empty()
         void clear()
-        void get_entity_vector(EntityHandle *entity_vector)
-        void get_entity_vector_key(EntityHandle *entity_vector, const int *key_vector, const int key_size)
-        void insert_entity_vector(EntityHandle *entity_vector, const int vector_size)
         bool all_of_type(EntityType t)
         bool all_of_dimension(int dimension)
         unsigned num_of_type( EntityType type )
@@ -211,6 +207,11 @@ cdef extern from "moab/Core.hpp" namespace "moab":
                                    vector[EntityHandle] & connectivity,
                                    bool corners_only,
                                    vector[int] * offsets)
+
+        ErrorCode set_connectivity(const EntityHandle entity_handle,
+                                   EntityHandle* connect,
+                                   const int num_connect)
+
         ErrorCode tag_get_handle(const char* name,
                                  int size,
                                  DataType type,
@@ -246,7 +247,7 @@ cdef extern from "moab/Core.hpp" namespace "moab":
         ErrorCode tag_delete(Tag tag_handle);
 
         ErrorCode tag_get_data_type(const Tag tag_handle,
-	                            DataType& type)
+                                DataType& type)
         ErrorCode tag_get_length(const Tag tag_handle,
                                  int & length)
 
@@ -419,12 +420,12 @@ cdef extern from "moab/Skinner.hpp" namespace "moab":
         # Compute the geometric skin
         ErrorCode find_geometric_skin (const EntityHandle meshset, Range &forward_target_entities)
 
-        # 	get skin entities of prescribed dimension
+        #   get skin entities of prescribed dimension
         #   will accept entities all of one dimension and return entities of n-1 dimension;
         #   NOTE: get_vertices argument controls whether vertices or entities of n-1 dimension are returned,
         #   and only one of these is allowed (i.e. this function returns only vertices or
         #   (n-1)-dimensional entities, but not both)
         # Defaults: *output_reverse_handles=0, create_vert_elem_adjs=false, create_skin_elements=true, look_for_scd=false
-        ErrorCode 	find_skin (const EntityHandle meshset, const Range &entities, bool get_vertices,
+        ErrorCode   find_skin (const EntityHandle meshset, const Range &entities, bool get_vertices,
                                 Range &output_handles, Range *output_reverse_handles, bool create_vert_elem_adjs,
                                 bool create_skin_elements, bool look_for_scd)

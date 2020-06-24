@@ -1205,6 +1205,39 @@ ErrorCode  Core::get_connectivity(const EntityHandle *entity_handles,
   return MB_SUCCESS;
 }
 
+ErrorCode  Core::get_connectivity_with_size(const EntityHandle *entity_handles,
+                                  const int num_handles,
+                                  std::vector<EntityHandle> &connectivity,
+                                  int *size_vector,
+                                  int *jagged,
+                                  bool corners_only,
+                                  std::vector<int> *offsets) const
+{
+  connectivity.clear(); // this seems wrong as compared to other API functions,
+                        // but changing it breaks lost of code, so I'm leaving
+                        // it in.  - j.kraftcheck 2009-11-06
+
+  ErrorCode rval;
+  std::vector<EntityHandle> tmp_storage; // used only for structured mesh
+  const EntityHandle* conn;
+  int len;
+  int jag = 0;
+  int sum = 0;
+  if (offsets) offsets->push_back(0);
+  for (int i = 0; i < num_handles; ++i) {
+    rval = get_connectivity( entity_handles[i], conn, len, corners_only, &tmp_storage );MB_CHK_ERR(rval);
+    connectivity.insert( connectivity.end(), conn, conn + len );
+    sum = sum + len;
+    size_vector[i]=sum;
+    if (jag == 0) {
+      if(len != size_vector[0]) jag = 1;
+    }
+    if (offsets) offsets->push_back(connectivity.size());
+  }
+  jagged[0]=jag;
+  return MB_SUCCESS;
+}
+
 //! get the connectivity for element handles.  For non-element handles, return an error
 ErrorCode Core::get_connectivity(const EntityHandle entity_handle,
                                      const EntityHandle*& connectivity,
